@@ -1,0 +1,36 @@
+local stub = require("luassert.stub")
+
+describe("runner", function()
+	it("can be required", function()
+		local runner = require("rspec-runner")
+		assert.is_not_nil(runner)
+	end)
+end)
+
+describe("find_test_file", function()
+	describe("when the file does not exist", function()
+		stub(vim.fn, "filereadable").returns(0)
+
+		it("returns nil", function()
+			local runner = require("rspec-runner")
+			local test_file = runner._find_test_file("/Users/me/projects/foo/app/models/user.rb")
+			assert.is_nil(test_file)
+		end)
+	end)
+
+	describe("when the file exists", function()
+		stub(vim.fn, "filereadable").returns(1)
+
+		it("replaces correctly the spec file for a model", function()
+			local runner = require("rspec-runner")
+			local test_file = runner._find_test_file("/Users/me/projects/foo/app/models/user.rb")
+			assert.are.same("/Users/me/projects/foo/spec/models/user_spec.rb", test_file)
+		end)
+
+		it("replaces correctly the spec file for a controller", function()
+			local runner = require("rspec-runner")
+			local test_file = runner._find_test_file("app/controllers/users_controller.rb")
+			assert.are.same("spec/controllers/users_controller_spec.rb", test_file)
+		end)
+	end)
+end)
