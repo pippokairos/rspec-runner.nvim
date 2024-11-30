@@ -2,6 +2,15 @@ local M = {}
 
 local Job = require("plenary.job")
 
+---@return table
+local function build_env()
+	return {
+		PATH = vim.env.PATH,
+		GEM_HOME = os.getenv("GEM_HOME") or "",
+		RBENV_ROOT = os.getenv("RBENV_ROOT") or "",
+	}
+end
+
 ---@param test_file string
 ---@return integer, integer
 local function create_floating_window(test_file)
@@ -42,65 +51,76 @@ local function schedule_output(buffer, output)
 	end)
 end
 
+local function create_job(command, args, buffer)
+	return Job:new({
+		command = command,
+		args = args,
+		env = build_env(),
+		on_stdout = function(_, data)
+			if data and data ~= "" then
+				schedule_output(buffer, data)
+			end
+		end,
+		on_stderr = function(_, data)
+			if data and data ~= "" then
+				schedule_output(buffer, data)
+			end
+		end,
+	}):start()
+end
+
+---@param file string
+---@return boolean
+local function is_spec(file)
+	return file:match("spec")
+end
+
+---@param file string
+---@return boolean
+local function is_engine(file)
+	return file:match("engines/")
+end
+
+---@param message string
+---@return nil
+local function notify_error(message)
+	vim.notify(message, vim.log.levels.ERROR)
+end
+
 function M.run_file()
 	local current_file = vim.api.nvim_buf_get_name(0)
 	local test_file = M._find_test_file(current_file)
+	if not test_file then
+		return
+	end
 
-	if test_file then
-		local bundle_path = vim.trim(vim.fn.system("which bundle"))
-		if bundle_path == "" then
-			print("Bundle not found")
-			return
-		end
+	local from_engine = is_engine(current_file)
+	if from_engine then
+		local engine_root = current_file:match("(.*/engines/[^/]+/)")
+		vim.cmd("cd " .. engine_root)
+	end
 
-		local buffer, _ = create_floating_window(test_file)
+	local bundle_path = vim.trim(vim.fn.system("which bundle"))
+	if bundle_path == "" then
+		notify_error("Bundle not found")
+		return
+	end
+	local buffer, _ = create_floating_window(test_file)
+	local args = { "exec", "rspec", test_file }
+	create_job(bundle_path, args, buffer)
 
-		Job:new({
-			command = bundle_path,
-			args = { "exec", "rspec", test_file },
-			env = {
-				PATH = vim.env.PATH,
-				GEM_HOME = os.getenv("GEM_HOME") or "",
-				RBENV_ROOT = os.getenv("RBENV_ROOT") or "",
-			},
-			on_stdout = function(_, data)
-				if data and data ~= "" then
-					schedule_output(buffer, data)
-				end
-			end,
-			on_stderr = function(_, data)
-				if data and data ~= "" then
-					schedule_output(buffer, data)
-				end
-			end,
-			on_exit = function(job, return_val)
-				vim.schedule(function()
-					if return_val == 0 then
-						vim.api.nvim_buf_set_lines(
-							buffer,
-							0,
-							-1,
-							false,
-							vim.split(table.concat(job:result(), "\n"), "\n")
-						)
-					else
-						vim.api.nvim_buf_set_lines(
-							buffer,
-							0,
-							-1,
-							false,
-							vim.split(table.concat(job:stderr_result(), "\n"), "\n")
-						)
-					end
-				end)
-			end,
-		}):start()
+	if from_engine then
+		vim.cmd("cd -")
 	end
 end
 
 ---@param file string
 ---@return string?
 function M._find_test_file(file)
+	if is_spec(file) then
+		return file
+	end
+
 	local test_file = file:gsub("app", "spec"):gsub(".rb", "_spec.rb")
 
 	if vim.fn.filereadable(test_file) ~= 1 then
