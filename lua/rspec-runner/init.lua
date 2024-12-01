@@ -94,11 +94,14 @@ function M.run_file()
 		return
 	end
 
+	local app_root
 	local from_engine = is_engine(current_file)
 	if from_engine then
-		local engine_root = current_file:match("(.*/engines/[^/]+/)")
-		vim.cmd("cd " .. engine_root)
+		app_root = current_file:match("(.*/engines/[^/]+/)")
+	else
+		app_root = current_file:match("(.*/app/)"):gsub("app/", "")
 	end
+	vim.cmd("cd " .. app_root)
 
 	local bundle_path = vim.trim(vim.fn.system("which bundle"))
 	if bundle_path == "" then
@@ -109,9 +112,7 @@ function M.run_file()
 	local args = { "exec", "rspec", test_file }
 	create_job(bundle_path, args, buffer)
 
-	if from_engine then
-		vim.cmd("cd -")
-	end
+	vim.cmd("cd -")
 end
 
 ---@param file string
